@@ -7,6 +7,7 @@ import backoff
 import sys
 import threading 
 from kubernetes import client, config, watch
+import math 
 
 
 
@@ -15,10 +16,15 @@ AGENT_API_KEY = os.getenv('K8INTEL_AGENT_API_KEY')
 CLUSTER_ID = os.getenv('K8INTEL_CLUSTER_ID')
 POLL_INTERVAL = int(os.getenv('K8INTEL_POLL_INTERVAL', '30'))
 K8S_NAMESPACES_TO_SCAN = os.getenv('K8S_NAMESPACES_TO_SCAN', 'default,kube-system').split(',')
+K8S_ANOMALY_ZSCORE_THRESHOLD = float(os.getenv('K8S_ANOMALY_ZSCORE_THRESHOLD', '3.0'))
 
 # --- Alerting Thresholds ---
 CPU_THRESHOLD = float(os.getenv('K8INTEL_CPU_THRESHOLD', '90.0'))
 MEMORY_THRESHOLD = float(os.getenv('K8INTEL_MEMORY_THRESHOLD', '85.0'))
+
+anomaly_detection_state = {}
+ANOMALY_COOLDOWN_SECONDS = 300 # Wait 5 minutes before sending another anomaly alert for the same metric
+last_anomaly_alert_time = {}
 
 # --- Logging Setup ---
 # This sets up a simple logger to print info to the console.
@@ -189,6 +195,52 @@ def watch_kubernetes_events():
         except Exception as e:
             logging.error(f"Error processing k8s event: {e}")
 
+def update_and_check_anomaly(metric_type, value):
+    """Updates running stats and checks for anomalies using Z-score."""
+    
+    # 1. Update the running statistics (Welford's algorithm)
+    if metric_type not in anomaly_detection_state:
+        anomaly_detection_state[metric_type] = (1, value, 0.0) # count, mean, M2
+        return # Not enough data to check for anomaly yet
+    
+    count, mean, M2 = anomaly_detection_state[metric_type]
+    count += 1
+    delta = value - mean
+    mean += delta / count
+    M2 += delta * (value - mean)
+    anomaly_detection_state[metric_type] = (count, mean, M2)
+
+    # 2. Check for anomaly after we have enough data points (e.g., > 10)
+    if count < 10:
+        return
+        
+    variance = M2 / count
+    std_dev = math.sqrt(variance)
+
+    # Avoid division by zero if all values are the same
+    if std_dev == 0:
+        return
+
+    # 3. Calculate Z-score (how many standard deviations away the current value is)
+    z_score = abs((value - mean) / std_dev)
+    
+    # 4. Check for cooldown
+    current_time = time.time()
+    if (current_time - last_anomaly_alert_time.get(metric_type, 0)) < ANOMALY_COOLDOWN_SECONDS:
+        return # In cooldown period
+        
+    # 5. Fire an alert if the Z-score is above our threshold
+    if z_score > K8S_ANOMALY_ZSCORE_THRESHOLD:
+        logging.warning(f"ANOMALY DETECTED for {metric_type}! Value: {value:.2f}, Mean: {mean:.2f}, StdDev: {std_dev:.2f}, Z-Score: {z_score:.2f}")
+        alert_payload = {
+            "clusterId": int(CLUSTER_ID),
+            "severity": "Warning",
+            "message": f"Anomaly Detected for {metric_type}: Value ({value:.2f}) is {z_score:.2f} standard deviations from the mean ({mean:.2f})."
+        }
+        post_to_api("alerts", alert_payload)
+        last_anomaly_alert_time[metric_type] = current_time
+
+
 def main_loop():
     """The main loop of the agent that runs forever."""
     logging.info(f"K8Intel Agent starting up. Target API: {API_BASE_URL}, Cluster ID: {CLUSTER_ID}")
@@ -238,6 +290,9 @@ def main_loop():
                 post_to_api("metrics", payload)
                 
                 # Check for alert conditions based on the metric we just processed
+                if metric_type in ["CPU", "Memory"]:
+                    update_and_check_anomaly(metric_type, value)
+
                 if metric_type == "CPU" and value > CPU_THRESHOLD:
                     alert_payload = {
                         "clusterId": int(CLUSTER_ID),
