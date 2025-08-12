@@ -114,6 +114,7 @@ def post_metric(metric_type, value):
 def main_loop():
     """The main loop of the agent that runs forever."""
     logging.info(f"K8Intel Agent starting up. Target API: {API_BASE_URL}, Cluster ID: {CLUSTER_ID}")
+    logging.info(f"Alerting Thresholds -> CPU: {CPU_THRESHOLD}%, Memory: {MEMORY_THRESHOLD}%")
 
     while True:
         try:
@@ -154,13 +155,25 @@ def main_loop():
 
             # Loop through all collected metrics and post them
             for metric_type, value in all_metrics.items():
-                payload = {
-                    "clusterId": int(CLUSTER_ID),
-                    "metricType": metric_type,
-                    "value": value
-                }
-                # Use our resilient function to post each one
+                # Post the metric
+                payload = {"clusterId": int(CLUSTER_ID), "metricType": metric_type, "value": value}
                 post_to_api("metrics", payload)
+                
+                # Check for alert conditions based on the metric we just processed
+                if metric_type == "CPU" and value > CPU_THRESHOLD:
+                    alert_payload = {
+                        "clusterId": int(CLUSTER_ID),
+                        "severity": "Critical",
+                        "message": f"High CPU usage detected: {value:.2f}% (Threshold: {CPU_THRESHOLD}%)"
+                    }
+                    post_to_api("alerts", alert_payload)
+                elif metric_type == "Memory" and value > MEMORY_THRESHOLD:
+                    alert_payload = {
+                        "clusterId": int(CLUSTER_ID),
+                        "severity": "Warning",
+                        "message": f"High Memory usage detected: {value:.2f}% (Threshold: {MEMORY_THRESHOLD}%)"
+                    }
+                    post_to_api("alerts", alert_payload)
 
         except Exception as e:
             logging.error(f"An unexpected error occurred in the main loop: {e}")
