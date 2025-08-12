@@ -43,9 +43,17 @@ This is the most critical configuration step. You are providing the agent with t
 For macOS, Linux, or Windows PowerShell:
 code
     Bash
-    export K8INTEL_API_URL="https://localhost:7001/api"
-    export K8INTEL_CLUSTER_ID="1"
-    export K8INTEL_AGENT_API_KEY="PASTE_YOUR_API_KEY_FROM_THE_DATABASE_HERE"
+            # The URL for your API running on your Mac
+            export K8INTEL_API_URL="https://localhost:7001/api"
+
+            # The API Key for the cluster you are testing with
+            export K8INTEL_AGENT_API_KEY="2uAbZVGXpUsxJ_AryszpU3AP_dXADT56M6HPAx7Imgk" 
+
+            # The ID of the cluster in your database
+            export K8INTEL_CLUSTER_ID="1" 
+
+            # (Optional) Tell the agent to only scan the 'default' namespace to keep logs clean
+            export K8S_NAMESPACES_TO_SCAN="default"
 (In PowerShell, you can also use $env:K8INTEL_API_KEY = "...", but export is more cross-platform if you use a shell like Git Bash on Windows).
 
 Important: These environment variables only last for the lifetime of your current terminal session. If you close the terminal, you will have to set them again.
