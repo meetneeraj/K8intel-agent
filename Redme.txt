@@ -1,0 +1,56 @@
+process of running the Python agent locally to test it against  .NET backend.
+
+This process involves two main parts:
+    Starting the Server (Your .NET API): The agent needs a destination to send its data to.
+    Starting the Client (Your Python Agent): Configuring and running the agent script.
+
+Step 1: Get the Necessary Credentials from Your Backend
+    Before you can run the agent, you need two crucial pieces of information that can only come from your API's database.
+    Start your .NET K8Intel API backend.
+    
+    Open a terminal in your K8intel C# project folder.
+        Run the command: dotnet run
+    
+    Wait until you see the Now listening on... message. The API is now running.
+    Create a Cluster & Get its API Key and ID.
+    If you don't have any clusters yet, use the Swagger UI (https://localhost:7001/swagger) or an API client like Postman to POST to the /api/clusters endpoint to create a new cluster.
+    Example Request Body: {"name": "local-dev-cluster", "apiEndpoint": "https://127.0.0.1:6443"}
+    Now, connect to your PostgreSQL database using a tool like DBeaver or pgAdmin.
+    Open the public.Clusters table and find the row for the cluster you want the agent to report on.
+    You need to copy two values from this row:
+    
+    The Id column: For example, 1. This will be your K8INTEL_CLUSTER_ID.
+    The AgentApiKey column: This will be a long, random string like rIETGBe4ycRthmn0CtraQmb8uR5lV7q6Nj7JXEuzEQE. This will be your K8INTEL_AGENT_API_KEY.
+
+Step 2: Configure and Run the Python Agent
+Now we switch to a separate, new terminal window. Do not close the terminal that is running your .NET API.
+Navigate to Your Python Project Directory.
+Change your directory to where you saved your Python agent.
+code
+    Bash
+    cd path/to/your/project/k8intel-agent
+Set the Environment Variables.
+
+This is the most critical configuration step. You are providing the agent with the credentials it needs to connect to the API. The commands differ slightly based on your operating system's terminal.
+    For Windows (Command Prompt cmd.exe):
+    code
+    Cmd
+        set K8INTEL_API_URL=https://localhost:7001/api
+        set K8INTEL_CLUSTER_ID=1
+        set K8INTEL_AGENT_API_KEY=PASTE_YOUR_API_KEY_FROM_THE_DATABASE_HERE
+    (Use your actual Cluster ID and API Key. The port 7001 should match the one your .NET API is listening on).
+
+For macOS, Linux, or Windows PowerShell:
+code
+    Bash
+    export K8INTEL_API_URL="https://localhost:7001/api"
+    export K8INTEL_CLUSTER_ID="1"
+    export K8INTEL_AGENT_API_KEY="PASTE_YOUR_API_KEY_FROM_THE_DATABASE_HERE"
+(In PowerShell, you can also use $env:K8INTEL_API_KEY = "...", but export is more cross-platform if you use a shell like Git Bash on Windows).
+
+Important: These environment variables only last for the lifetime of your current terminal session. If you close the terminal, you will have to set them again.
+Run the Python Script.
+Now that the configuration is set, simply execute the agent.py file using the python command.
+code
+    Bash
+    python agent.py
